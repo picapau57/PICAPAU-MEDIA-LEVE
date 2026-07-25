@@ -1,0 +1,6 @@
+{
+  "name": "PICAPAU MEDIA LEVE",
+  "description": "Sistema IPTV leve e otimizado estilo Woo TV - MIX para TV Box, Smart TV e Celular. Inclui Painel Admin para M3U, separação por Canais/Filmes/Séries, e suporte a controle remoto.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
