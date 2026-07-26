@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { AppConfig, PlaylistSource, UserAccount } from "../types";
 import { syncClientSources, normalizeUrl } from "../utils/m3uParser";
+import { generate10SampleMovieLists } from "../utils/sampleMovieLists";
 import {
   ShieldAlert,
   Link,
@@ -20,6 +21,9 @@ import {
   Tv,
   CheckCircle2,
   AlertCircle,
+  Eraser,
+  Film,
+  RotateCcw,
 } from "lucide-react";
 
 interface AdminPanelProps {
@@ -277,6 +281,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Clear Content of a Single Source (Esvaziar Lista)
+  const handleClearSingleSource = async (id: string, name: string) => {
+    if (!confirm(`Deseja realmente esvaziar todo o conteúdo da lista "${name}"?`)) return;
+    try {
+      const updatedSources = sources.map((s) => {
+        if (s.id === id) {
+          return { ...s, url: "", content: "", itemCount: 0, updatedAt: new Date().toISOString() };
+        }
+        return s;
+      });
+      setSources(updatedSources);
+      localStorage.setItem("picapau_sources", JSON.stringify(updatedSources));
+
+      // Update backend if possible
+      fetch(`/api/admin/sources/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "", content: "" }),
+      }).catch(() => null);
+
+      await syncClientSources(updatedSources);
+      onRefreshContent();
+      setStatusMessage({ type: "success", text: `Lista "${name}" foi esvaziada com sucesso.` });
+    } catch (err) {
+      setStatusMessage({ type: "error", text: "Erro ao esvaziar a lista." });
+    }
+  };
+
   // Delete Source
   const handleDeleteSource = async (id: string) => {
     if (!confirm("Tem certeza que deseja remover esta lista?")) return;
@@ -290,6 +322,58 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setStatusMessage({ type: "success", text: "Lista removida com sucesso." });
     } catch (err) {
       setStatusMessage({ type: "error", text: "Erro ao deletar fonte." });
+    }
+  };
+
+  // Clear ALL Sources (Limpar Todas as Listas)
+  const handleClearAllSources = async () => {
+    if (!confirm("⚠️ ATENÇÃO: Tem certeza que deseja LIMPAR TODAS AS LISTAS? Todos os canais e filmes cadastrados serão removidos.")) {
+      return;
+    }
+    try {
+      setIsSyncing(true);
+      fetch("/api/admin/sources", { method: "DELETE" }).catch(() => null);
+
+      setSources([]);
+      localStorage.removeItem("picapau_sources");
+      localStorage.removeItem("picapau_cached_content");
+
+      const parsed = await syncClientSources([]);
+      onRefreshContent();
+      setStatusMessage({
+        type: "success",
+        text: "Todas as listas foram apagadas com sucesso! O sistema está limpo para novas listas.",
+      });
+    } catch (err) {
+      setStatusMessage({ type: "error", text: "Erro ao limpar todas as listas." });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Auto Load 10 Sample Movie Lists
+  const handleLoad10MovieLists = async () => {
+    if (sources.length > 0 && !confirm("Deseja adicionar as 10 listas de filmes demonstrativas às suas listas atuais?")) {
+      return;
+    }
+    try {
+      setIsSyncing(true);
+      const new10Lists = generate10SampleMovieLists();
+      const updatedSources = [...sources, ...new10Lists];
+
+      setSources(updatedSources);
+      localStorage.setItem("picapau_sources", JSON.stringify(updatedSources));
+
+      const parsed = await syncClientSources(updatedSources);
+      onRefreshContent();
+      setStatusMessage({
+        type: "success",
+        text: `10 Listas com Filmes criadas e sincronizadas! Total de ${parsed.moviesCount} filmes carregados.`,
+      });
+    } catch (err) {
+      setStatusMessage({ type: "error", text: "Erro ao carregar as 10 listas de filmes." });
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -558,13 +642,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <form onSubmit={handleAddSource} className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1">
+                  Atalhos Rápidos de Lista (Slots 1 a 10):
+                </label>
+                <div className="grid grid-cols-5 gap-1.5 mb-2">
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setNewSourceName(`Lista ${num}: Filmes`)}
+                      className="py-1 px-2 bg-[#0F0F12] hover:bg-orange-500/20 hover:text-orange-400 text-gray-400 border border-white/10 rounded-lg text-[10px] font-mono transition-colors"
+                      title={`Preencher nome como Lista ${num}`}
+                    >
+                      Slot #{num}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="block text-xs font-medium text-gray-400 mb-1">
                   Nome Identificador da Lista:
                 </label>
                 <input
                   type="text"
                   value={newSourceName}
                   onChange={(e) => setNewSourceName(e.target.value)}
-                  placeholder="Ex: Minha Lista Principal, Servidor VIP, etc."
+                  placeholder="Ex: Lista 1: Filmes Ação, Servidor VIP, etc."
                   className="w-full bg-[#0F0F12] text-white px-3 py-2 rounded-xl border border-white/10 text-xs focus:outline-none focus:border-orange-500/50"
                   required
                 />
@@ -620,61 +721,118 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
           {/* Right Table: Active Playlists */}
           <div className="lg:col-span-2 bg-[#1A1A1F] border border-white/10 rounded-2xl p-5 space-y-4 text-left">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/5">
               <div>
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
                   Listas M3U Cadastradas ({sources.length})
                 </h3>
                 <p className="text-xs text-gray-400">
-                  O sistema organiza automaticamente em Canais, Filmes e Séries.
+                  Gerencie ou esvazie cada lista individualmente para trocar de conteúdo com facilidade.
                 </p>
               </div>
 
-              <button
-                onClick={handleForceSync}
-                disabled={isSyncing}
-                className="px-3 py-1.5 bg-[#0F0F12] hover:bg-white/5 text-orange-400 font-bold text-xs rounded-xl border border-white/10 flex items-center space-x-1.5"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-                <span>RECARREGAR LISTAS</span>
-              </button>
+              {/* Action Buttons Header */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleLoad10MovieLists}
+                  disabled={isSyncing}
+                  className="px-3 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 font-bold text-xs rounded-xl border border-orange-500/30 flex items-center space-x-1.5 transition-colors"
+                  title="Gerar automaticamente 10 listas de filmes demonstrativos (5 a 10 filmes cada)"
+                >
+                  <Film className="w-3.5 h-3.5 shrink-0" />
+                  <span>GERAR 10 LISTAS (FILMES)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleForceSync}
+                  disabled={isSyncing}
+                  className="px-3 py-1.5 bg-[#0F0F12] hover:bg-white/5 text-gray-300 hover:text-white font-bold text-xs rounded-xl border border-white/10 flex items-center space-x-1.5 transition-colors"
+                  title="Sincronizar e reprocessar listas cadastradas"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+                  <span>RECARREGAR</span>
+                </button>
+
+                {sources.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearAllSources}
+                    disabled={isSyncing}
+                    className="px-3 py-1.5 bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 flex items-center space-x-1.5 transition-colors"
+                    title="Apagar todas as listas cadastradas no sistema"
+                  >
+                    <Eraser className="w-3.5 h-3.5 shrink-0" />
+                    <span>LIMPAR TODAS</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 no-scrollbar">
-              {sources.map((src) => (
-                <div
-                  key={src.id}
-                  className="bg-[#0F0F12] p-4 rounded-xl border border-white/5 flex items-center justify-between gap-4"
-                >
-                  <div className="flex items-start space-x-3 truncate">
-                    <div className="p-2 rounded-lg bg-orange-500/10 text-orange-400 border border-orange-500/20 shrink-0">
-                      {src.type === "url" ? <Link className="w-5 h-5" /> : <FileText className="w-5 h-5" />}
-                    </div>
-
-                    <div className="truncate">
-                      <div className="flex items-center space-x-2">
-                        <h4 className="text-xs font-semibold text-white truncate">{src.name}</h4>
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-[#1A1A1F] text-gray-300 font-mono border border-white/5">
-                          {src.itemCount} itens
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-gray-500 truncate mt-0.5 font-mono">
-                        {src.type === "url" ? src.url : "Lista Aberta em Texto M3U"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <button
-                      onClick={() => handleDeleteSource(src.id)}
-                      className="p-2 text-gray-500 hover:text-red-400 bg-[#1A1A1F] rounded-lg border border-white/5 transition-colors"
-                      title="Excluir Lista"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+              {sources.length === 0 ? (
+                <div className="p-8 text-center bg-[#0F0F12] rounded-xl border border-dashed border-white/10 space-y-3">
+                  <Film className="w-8 h-8 text-gray-600 mx-auto" />
+                  <div>
+                    <p className="text-xs font-semibold text-gray-300">Nenhuma lista cadastrada no momento.</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      Adicione um link M3U no formulário ao lado ou clique em{" "}
+                      <strong className="text-orange-400 font-mono">"GERAR 10 LISTAS (FILMES)"</strong> para preencher automaticamente com 10 listas prontas.
+                    </p>
                   </div>
                 </div>
-              ))}
+              ) : (
+                sources.map((src, index) => (
+                  <div
+                    key={src.id}
+                    className="bg-[#0F0F12] p-4 rounded-xl border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-white/10 transition-colors"
+                  >
+                    <div className="flex items-start space-x-3 truncate">
+                      <div className="p-2 rounded-lg bg-orange-500/10 text-orange-400 border border-orange-500/20 shrink-0 font-mono text-xs font-bold flex items-center justify-center min-w-[36px]">
+                        #{index + 1}
+                      </div>
+
+                      <div className="truncate">
+                        <div className="flex items-center space-x-2">
+                          <h4 className="text-xs font-semibold text-white truncate">{src.name}</h4>
+                          <span className={`text-[10px] px-2 py-0.5 rounded font-mono border ${
+                            src.itemCount > 0
+                              ? "bg-emerald-950/50 text-emerald-300 border-emerald-500/20"
+                              : "bg-gray-800 text-gray-400 border-white/5"
+                          }`}>
+                            {src.itemCount} {src.itemCount === 1 ? "item" : "itens"}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-500 truncate mt-0.5 font-mono">
+                          {src.type === "url" && src.url ? src.url : src.content ? "Lista M3U em Texto (Conteúdo Ativo)" : "Lista Vazia / Sem Conteúdo"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0 justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-white/5">
+                      <button
+                        type="button"
+                        onClick={() => handleClearSingleSource(src.id, src.name)}
+                        className="px-2.5 py-1.5 text-[11px] font-semibold text-orange-400 hover:text-orange-300 bg-[#1A1A1F] hover:bg-orange-500/10 rounded-lg border border-orange-500/20 transition-colors flex items-center space-x-1"
+                        title="Esvaziar conteúdo desta lista"
+                      >
+                        <Eraser className="w-3.5 h-3.5" />
+                        <span>Esvaziar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteSource(src.id)}
+                        className="p-1.5 text-gray-500 hover:text-rose-400 bg-[#1A1A1F] hover:bg-rose-500/10 rounded-lg border border-white/5 transition-colors"
+                        title="Excluir Lista Permanentemente"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>

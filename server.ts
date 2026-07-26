@@ -346,6 +346,18 @@ async function startServer() {
     }
   });
 
+  // Admin - Clear All Sources
+  app.delete("/api/admin/sources", (req, res) => {
+    try {
+      store.sources = [];
+      saveServerStore();
+      cachedParsedData = null;
+      res.json({ success: true, message: "Todas as listas foram limpas." });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Erro ao limpar listas." });
+    }
+  });
+
   // Admin - Force Sync Content
   app.post("/api/admin/sources/sync", async (req, res) => {
     try {

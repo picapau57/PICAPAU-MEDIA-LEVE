@@ -51,32 +51,87 @@ export function parseM3UContent(m3uText: string): ParsedM3U {
       if (currentInfo) {
         currentInfo.url = line;
 
-        // Categorize into Live / Movie / Series
+        // Categorize strictly into Live TV / Movie VOD / Series VOD
         const upperGroup = currentInfo.group?.toUpperCase() || "";
         const upperName = currentInfo.name?.toUpperCase() || "";
+        const urlLower = line.toLowerCase();
 
         let type: ContentType = "live";
 
-        if (
+        // 1. Check SERIES / SÉRIES / NOVELAS (Strict priority for episodic content)
+        const isSeriesGroup =
+          upperGroup.includes("SERIE") ||
+          upperGroup.includes("SÉRIE") ||
+          upperGroup.includes("SERIES") ||
+          upperGroup.includes("NOVELA") ||
+          upperGroup.includes("SEASON") ||
+          upperGroup.includes("TEMPORADA") ||
+          upperGroup.includes("MINISSERIE") ||
+          upperGroup.includes("MINIS SÉR") ||
+          upperGroup.includes("DORAMA") ||
+          upperGroup.includes("ANIME");
+
+        const isSeriesName =
+          /S\d{1,2}\s*E\d{1,2}/i.test(upperName) ||
+          /\d{1,2}x\d{1,2}/i.test(upperName) ||
+          /\b(EP|EPISODIO|EPISÓDIO|CAP|CAPITULO|CAPÍTULO)\s*\d+/i.test(upperName) ||
+          /T\d{1,2}\s*E\d{1,2}/i.test(upperName);
+
+        const isSeriesUrl =
+          urlLower.includes("/series/") ||
+          urlLower.includes("/serie/") ||
+          urlLower.includes("/series_vod/");
+
+        if (isSeriesGroup || isSeriesName || isSeriesUrl) {
+          type = "series";
+        }
+        // 2. Check MOVIES / FILMES (Strict VOD movies)
+        else if (
           upperGroup.includes("FILME") ||
           upperGroup.includes("MOVIE") ||
           upperGroup.includes("VOD") ||
           upperGroup.includes("CINEMA") ||
+          upperGroup.includes("PONTOCINE") ||
+          upperGroup.includes("LANÇAMENTO") ||
+          upperGroup.includes("LANCAMENTO") ||
           upperGroup.includes("4K FILMES") ||
-          line.endsWith(".mp4") ||
-          line.endsWith(".mkv") ||
-          line.endsWith(".avi")
+          upperGroup.includes("ULTRA HD FILMES") ||
+          upperGroup.includes("PLUTO FILMES") ||
+          upperGroup.includes("NETFLIX FILMES") ||
+          upperGroup.includes("PRIME FILMES") ||
+          upperGroup.includes("HBO FILMES") ||
+          upperGroup.includes("DUBLADO") ||
+          upperGroup.includes("LEGENDADO") ||
+          urlLower.includes("/movie/") ||
+          urlLower.includes("/movies/") ||
+          urlLower.includes("/vod/") ||
+          urlLower.endsWith(".mp4") ||
+          urlLower.endsWith(".mkv") ||
+          urlLower.endsWith(".avi") ||
+          urlLower.endsWith(".mov")
         ) {
-          type = "movie";
-        } else if (
-          upperGroup.includes("SERIE") ||
-          upperGroup.includes("SÉRIE") ||
-          upperGroup.includes("SEASON") ||
-          upperGroup.includes("NOVELA") ||
-          /S\d{1,2}E\d{1,2}/i.test(upperName) ||
-          /\d{1,2}x\d{1,2}/i.test(upperName)
-        ) {
-          type = "series";
+          // Exclude continuous 24/7 TV channels (e.g., "CANAIS | FILMES 24H", "24/7", "24H")
+          const isLive24h =
+            upperGroup.includes("24H") ||
+            upperGroup.includes("24/7") ||
+            upperGroup.includes("CANAL") ||
+            upperGroup.includes("CANAIS") ||
+            upperGroup.includes("TV") ||
+            upperGroup.includes("AO VIVO") ||
+            upperGroup.includes("AOVIVO") ||
+            upperName.includes("24H") ||
+            upperName.includes("24/7") ||
+            upperName.includes("24 HORAS");
+
+          if (isLive24h && (urlLower.includes(".m3u8") || !urlLower.endsWith(".mp4"))) {
+            type = "live";
+          } else {
+            type = "movie";
+          }
+        }
+        // 3. All remaining are LIVE TV CHANNELS
+        else {
+          type = "live";
         }
 
         currentInfo.type = type;
