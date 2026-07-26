@@ -13,6 +13,7 @@ import {
   SeriesGroup,
   UserAccount,
 } from "./src/types";
+import { parseM3UContent, normalizeUrl } from "./src/utils/m3uParser";
 
 const PORT = 3000;
 const DATA_FILE = path.join(process.cwd(), "server-data.json");
@@ -152,176 +153,13 @@ function saveServerStore() {
   }
 }
 
-// M3U Parser logic
-function parseM3UContent(m3uText: string): ParsedM3U {
-  const lines = m3uText.split(/\r?\n/);
-  const rawItems: PlaylistItem[] = [];
-
-  let currentInfo: Partial<PlaylistItem> | null = null;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    if (line.startsWith("#EXTINF:")) {
-      currentInfo = {};
-
-      // Parse attributes
-      const logoMatch = line.match(/tvg-logo="([^"]+)"/i);
-      const groupMatch = line.match(/group-title="([^"]+)"/i);
-      const tvgNameMatch = line.match(/tvg-name="([^"]+)"/i);
-      const epgMatch = line.match(/tvg-id="([^"]+)"/i);
-
-      // Title is after the last comma
-      const commaIdx = line.lastIndexOf(",");
-      let name = commaIdx !== -1 ? line.substring(commaIdx + 1).trim() : "Sem Nome";
-      if (!name && tvgNameMatch) {
-        name = tvgNameMatch[1];
-      }
-
-      const logo = logoMatch ? logoMatch[1] : undefined;
-      const group = groupMatch ? groupMatch[1].toUpperCase() : "OUTROS";
-      const epgId = epgMatch ? epgMatch[1] : undefined;
-
-      currentInfo = {
-        id: `item_${Math.random().toString(36).substring(2, 9)}_${i}`,
-        name: name || "Conteúdo Sem Nome",
-        group: group || "GERAL",
-        logo: logo,
-        epgId: epgId,
-        url: "",
-      };
-    } else if (line.length > 0 && !line.startsWith("#")) {
-      // Stream URL line
-      if (currentInfo) {
-        currentInfo.url = line;
-
-        // Categorize into Live / Movie / Series
-        const upperGroup = currentInfo.group?.toUpperCase() || "";
-        const upperName = currentInfo.name?.toUpperCase() || "";
-
-        let type: ContentType = "live";
-
-        if (
-          upperGroup.includes("FILME") ||
-          upperGroup.includes("MOVIE") ||
-          upperGroup.includes("VOD") ||
-          upperGroup.includes("CINEMA") ||
-          upperGroup.includes("4K FILMES") ||
-          line.endsWith(".mp4") ||
-          line.endsWith(".mkv") ||
-          line.endsWith(".avi")
-        ) {
-          type = "movie";
-        } else if (
-          upperGroup.includes("SERIE") ||
-          upperGroup.includes("SÉRIE") ||
-          upperGroup.includes("SEASON") ||
-          upperGroup.includes("NOVELA") ||
-          /S\d{1,2}E\d{1,2}/i.test(upperName) ||
-          /\d{1,2}x\d{1,2}/i.test(upperName)
-        ) {
-          type = "series";
-        }
-
-        currentInfo.type = type;
-        rawItems.push(currentInfo as PlaylistItem);
-        currentInfo = null;
-      }
-    }
-  }
-
-  // Separate channels, movies, series
-  const channels: PlaylistItem[] = [];
-  const movies: PlaylistItem[] = [];
-  const seriesMap: Map<string, SeriesGroup> = new Map();
-
-  const channelCategoriesSet = new Set<string>();
-  const movieCategoriesSet = new Set<string>();
-  const seriesCategoriesSet = new Set<string>();
-
-  for (const item of rawItems) {
-    if (item.type === "live") {
-      channels.push(item);
-      channelCategoriesSet.add(item.group);
-    } else if (item.type === "movie") {
-      movies.push(item);
-      movieCategoriesSet.add(item.group);
-    } else {
-      // Series grouping logic
-      seriesCategoriesSet.add(item.group);
-
-      // Extract series name, season, episode
-      let seriesTitle = item.name;
-      let seasonNumber = 1;
-      let episodeNumber = 1;
-
-      // Pattern like S01E02 or S1E2
-      const seMatch = item.name.match(/^(.*?)\s*S(\d{1,2})\s*E(\d{1,2})/i);
-      // Pattern like 1x02
-      const altMatch = item.name.match(/^(.*?)\s*(\d{1,2})x(\d{1,2})/i);
-
-      if (seMatch) {
-        seriesTitle = seMatch[1].trim() || item.name;
-        seasonNumber = parseInt(seMatch[2], 10);
-        episodeNumber = parseInt(seMatch[3], 10);
-      } else if (altMatch) {
-        seriesTitle = altMatch[1].trim() || item.name;
-        seasonNumber = parseInt(altMatch[2], 10);
-        episodeNumber = parseInt(altMatch[3], 10);
-      }
-
-      const seriesKey = `${item.group}_${seriesTitle.toLowerCase()}`;
-
-      if (!seriesMap.has(seriesKey)) {
-        seriesMap.set(seriesKey, {
-          id: `series_${Math.random().toString(36).substring(2, 9)}`,
-          name: seriesTitle,
-          group: item.group,
-          logo: item.logo,
-          episodes: [],
-          seasonsCount: 1,
-        });
-      }
-
-      const sGroup = seriesMap.get(seriesKey)!;
-      sGroup.episodes.push({
-        id: item.id,
-        episodeNumber,
-        seasonNumber,
-        title: item.name,
-        url: item.url,
-        logo: item.logo || sGroup.logo,
-      });
-
-      if (seasonNumber > sGroup.seasonsCount) {
-        sGroup.seasonsCount = seasonNumber;
-      }
-    }
-  }
-
-  const series = Array.from(seriesMap.values());
-
-  return {
-    totalCount: rawItems.length,
-    channelsCount: channels.length,
-    moviesCount: movies.length,
-    seriesCount: series.length,
-    categories: {
-      channels: Array.from(channelCategoriesSet).sort(),
-      movies: Array.from(movieCategoriesSet).sort(),
-      series: Array.from(seriesCategoriesSet).sort(),
-    },
-    channels,
-    movies,
-    series,
-  };
-}
-
 async function fetchM3UText(url: string, timeoutMs: number = 8000): Promise<string | null> {
+  const targetUrl = normalizeUrl(url);
+  if (!targetUrl) return null;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {
+    const response = await fetch(targetUrl, {
       signal: controller.signal,
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) IPTV Player Picapau",
@@ -331,13 +169,13 @@ async function fetchM3UText(url: string, timeoutMs: number = 8000): Promise<stri
     if (response.ok) {
       return await response.text();
     }
-    console.warn(`M3U URL returned status ${response.status}: ${url}`);
+    console.warn(`M3U URL returned status ${response.status}: ${targetUrl}`);
     return null;
   } catch (err: any) {
     if (err?.name === "AbortError") {
-      console.warn(`Timeout fetching M3U URL (${timeoutMs}ms): ${url}`);
+      console.warn(`Timeout fetching M3U URL (${timeoutMs}ms): ${targetUrl}`);
     } else {
-      console.warn(`Error fetching M3U URL (${url}):`, err?.message || err);
+      console.warn(`Error fetching M3U URL (${targetUrl}):`, err?.message || err);
     }
     return null;
   } finally {
@@ -658,6 +496,13 @@ async function startServer() {
   });
 
   // Stream Proxy to handle CORS / custom user-agents for external channels
+  app.options("/api/stream/proxy", (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+    res.sendStatus(204);
+  });
+
   app.get("/api/stream/proxy", async (req, res) => {
     const streamUrl = req.query.url as string;
     if (!streamUrl) {
@@ -667,28 +512,40 @@ async function startServer() {
     try {
       const response = await fetch(streamUrl, {
         headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "*/*",
         },
+        redirect: "follow",
       });
 
       res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Content-Type", response.headers.get("content-type") || "video/mp2t");
+      res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "*");
+
+      const contentType = response.headers.get("content-type") || "video/mp2t";
+      res.setHeader("Content-Type", contentType);
 
       if (response.body) {
         // @ts-ignore
         const reader = response.body.getReader();
         const pump = async () => {
-          const { done, value } = await reader.read();
-          if (done) return res.end();
-          res.write(value);
-          return pump();
+          try {
+            const { done, value } = await reader.read();
+            if (done) return res.end();
+            res.write(value);
+            return pump();
+          } catch {
+            return res.end();
+          }
         };
         pump();
       } else {
         res.status(500).send("Stream body empty");
       }
     } catch (err: any) {
-      res.status(502).send(`Proxy stream error: ${err.message}`);
+      if (!res.headersSent) {
+        res.status(502).send(`Proxy stream error: ${err.message}`);
+      }
     }
   });
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { AppConfig, PlaylistSource, UserAccount } from "../types";
+import { syncClientSources, normalizeUrl } from "../utils/m3uParser";
 import {
   ShieldAlert,
   Link,
@@ -72,20 +73,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const loadAdminData = async () => {
     try {
       const [srcRes, usrRes] = await Promise.all([
-        fetch("/api/admin/sources"),
-        fetch("/api/admin/users"),
+        fetch("/api/admin/sources").catch(() => null),
+        fetch("/api/admin/users").catch(() => null),
       ]);
 
-      if (srcRes.ok) {
+      if (srcRes && srcRes.ok) {
         const srcData = await srcRes.json();
-        setSources(srcData);
+        if (Array.isArray(srcData)) {
+          setSources(srcData);
+          localStorage.setItem("picapau_sources", JSON.stringify(srcData));
+        }
+      } else {
+        const saved = localStorage.getItem("picapau_sources");
+        if (saved) setSources(JSON.parse(saved));
       }
-      if (usrRes.ok) {
+
+      if (usrRes && usrRes.ok) {
         const usrData = await usrRes.json();
-        setUsers(usrData);
+        if (Array.isArray(usrData)) {
+          setUsers(usrData);
+        }
       }
     } catch (err) {
       console.error("Error loading admin data:", err);
+      const saved = localStorage.getItem("picapau_sources");
+      if (saved) setSources(JSON.parse(saved));
     }
   };
 
@@ -125,15 +137,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Add Playlist Source (URL or Raw)
   const handleAddSource = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newSourceName) {
+    if (!newSourceName.trim()) {
       setStatusMessage({ type: "error", text: "Digite um nome para a lista." });
       return;
     }
-    if (newSourceType === "url" && !newSourceUrl) {
+    if (newSourceType === "url" && !newSourceUrl.trim()) {
       setStatusMessage({ type: "error", text: "Digite o link URL da lista M3U." });
       return;
     }
-    if (newSourceType === "raw" && !newSourceRaw) {
+    if (newSourceType === "raw" && !newSourceRaw.trim()) {
       setStatusMessage({ type: "error", text: "Cole o conteúdo M3U no campo de texto." });
       return;
     }
@@ -141,65 +153,74 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setIsSubmittingSource(true);
     setStatusMessage(null);
 
+    const formattedUrl = newSourceType === "url" ? normalizeUrl(newSourceUrl) : undefined;
+
     try {
       const body = {
-        name: newSourceName,
+        name: newSourceName.trim(),
         type: newSourceType,
-        url: newSourceType === "url" ? newSourceUrl : undefined,
+        url: formattedUrl,
         content: newSourceType === "raw" ? newSourceRaw : undefined,
       };
 
-      const res = await fetch("/api/admin/sources", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      let isBackendSaved = false;
+      let serverItemCount = 0;
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setStatusMessage({
-            type: "success",
-            text: `Lista "${newSourceName}" adicionada com sucesso! (${data.source.itemCount} itens detectados)`,
-          });
-          setNewSourceName("");
-          setNewSourceUrl("");
-          setNewSourceRaw("");
-          loadAdminData();
-          onRefreshContent();
-          return;
-        } else {
-          setStatusMessage({ type: "error", text: data.error || "Erro ao processar lista." });
-          return;
-        }
-      } else {
-        const errData = await res.json().catch(() => null);
-        setStatusMessage({
-          type: "error",
-          text: errData?.error || `Erro no servidor (${res.status}) ao adicionar lista.`,
+      try {
+        const res = await fetch("/api/admin/sources", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
         });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            isBackendSaved = true;
+            serverItemCount = data.source.itemCount;
+          }
+        }
+      } catch (err) {
+        console.warn("Backend add source unavailable, using client local storage fallback:", err);
       }
-    } catch (err) {
-      console.warn("Backend source upload error:", err);
-      // Client-side fallback addition if backend is unreachable
-      const fallbackSource: PlaylistSource = {
-        id: `src_local_${Math.random().toString(36).substring(2, 7)}`,
-        name: newSourceName,
+
+      const newSource: PlaylistSource = {
+        id: `src_${Math.random().toString(36).substring(2, 9)}`,
+        name: newSourceName.trim(),
         type: newSourceType,
-        url: newSourceType === "url" ? newSourceUrl : undefined,
+        url: formattedUrl,
         content: newSourceType === "raw" ? newSourceRaw : undefined,
         updatedAt: new Date().toISOString(),
-        itemCount: 0,
+        itemCount: serverItemCount,
         active: true,
       };
-      setSources((prev) => [...prev, fallbackSource]);
+
+      const updatedSources = [...sources, newSource];
+      setSources(updatedSources);
+      try {
+        localStorage.setItem("picapau_sources", JSON.stringify(updatedSources));
+      } catch (err) {
+        console.warn("LocalStorage save error:", err);
+      }
+
+      // Run client sync so content is parsed immediately
+      const parsed = await syncClientSources(updatedSources);
+
       setStatusMessage({
         type: "success",
-        text: `Lista "${newSourceName}" registrada localmente!`,
+        text: `Lista "${newSourceName.trim()}" adicionada e sincronizada com sucesso! (${parsed.totalCount} itens detectados)`,
       });
+
       setNewSourceName("");
       setNewSourceUrl("");
       setNewSourceRaw("");
+      onRefreshContent();
+    } catch (err: any) {
+      console.error("Error adding playlist source:", err);
+      setStatusMessage({
+        type: "error",
+        text: "Erro ao adicionar lista. Verifique os dados e tente novamente.",
+      });
     } finally {
       setIsSubmittingSource(false);
     }
@@ -210,32 +231,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setIsSyncing(true);
     setStatusMessage(null);
     try {
-      const res = await fetch("/api/admin/sources/sync", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setStatusMessage({
-            type: "success",
-            text: `Sincronização concluída! Total de ${data.stats.total} itens (${data.stats.channels} Canais, ${data.stats.movies} Filmes, ${data.stats.series} Séries)`,
-          });
-          onRefreshContent();
-          return;
-        } else {
-          setStatusMessage({ type: "error", text: data.error || "Erro ao sincronizar listas." });
-          return;
+      let serverSynced = false;
+      try {
+        const res = await fetch("/api/admin/sources/sync", { method: "POST" });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            serverSynced = true;
+            setStatusMessage({
+              type: "success",
+              text: `Sincronização concluída! Total de ${data.stats.total} itens (${data.stats.channels} Canais, ${data.stats.movies} Filmes, ${data.stats.series} Séries)`,
+            });
+            onRefreshContent();
+          }
         }
-      } else {
-        const errData = await res.json().catch(() => null);
+      } catch (err) {
+        console.warn("Server sync endpoint unavailable, syncing client side:", err);
+      }
+
+      if (!serverSynced) {
+        const currentSources = sources.length > 0 ? sources : (() => {
+          try {
+            const saved = localStorage.getItem("picapau_sources");
+            return saved ? JSON.parse(saved) : [];
+          } catch {
+            return [];
+          }
+        })();
+
+        const parsed = await syncClientSources(currentSources);
         setStatusMessage({
-          type: "error",
-          text: errData?.error || errData?.message || `Erro no servidor (${res.status}). Verifique o link da lista.`,
+          type: "success",
+          text: `Sincronização concluída! Total de ${parsed.totalCount} itens (${parsed.channelsCount} Canais, ${parsed.moviesCount} Filmes, ${parsed.seriesCount} Séries)`,
         });
+        onRefreshContent();
       }
     } catch (err) {
       console.warn("Sync error:", err);
       setStatusMessage({
         type: "error",
-        text: "Não foi possível conectar ao servidor para sincronizar. Recarregue a página e tente novamente.",
+        text: "Erro ao sincronizar listas. Verifique os links M3U cadastrados.",
       });
     } finally {
       setIsSyncing(false);
@@ -246,8 +281,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleDeleteSource = async (id: string) => {
     if (!confirm("Tem certeza que deseja remover esta lista?")) return;
     try {
-      await fetch(`/api/admin/sources/${id}`, { method: "DELETE" });
-      loadAdminData();
+      fetch(`/api/admin/sources/${id}`, { method: "DELETE" }).catch(() => null);
+      const updatedSources = sources.filter((s) => s.id !== id);
+      setSources(updatedSources);
+      localStorage.setItem("picapau_sources", JSON.stringify(updatedSources));
+      await syncClientSources(updatedSources);
       onRefreshContent();
       setStatusMessage({ type: "success", text: "Lista removida com sucesso." });
     } catch (err) {

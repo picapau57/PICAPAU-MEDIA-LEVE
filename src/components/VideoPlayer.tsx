@@ -34,6 +34,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [showControls, setShowControls] = useState<boolean>(true);
 
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState<number>(0);
+  const [proxyMode, setProxyMode] = useState<"direct" | "server_proxy" | "cors_proxy">("direct");
 
   // Setup HLS or standard video stream
   useEffect(() => {
@@ -45,70 +47,115 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setErrorMessage("");
 
     let hls: Hls | null = null;
+    let networkRetryCount = 0;
+    const MAX_RETRIES = 3;
 
-    // Check if proxy needed (if http stream inside https app)
+    // Determine target play URL
     let playUrl = url;
-    if (window.location.protocol === "https:" && url.startsWith("http:")) {
+    if (proxyMode === "server_proxy" || (window.location.protocol === "https:" && url.startsWith("http:"))) {
       playUrl = `/api/stream/proxy?url=${encodeURIComponent(url)}`;
+    } else if (proxyMode === "cors_proxy") {
+      playUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
     }
 
-    if (playUrl.includes(".m3u8") || playUrl.includes("m3u8")) {
-      if (Hls.isSupported()) {
-        hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: true,
-          backBufferLength: 60,
-        });
+    // Determine if HLS should be used (m3u8, ts, live streams, or generic video stream)
+    const isDirectMp4 = /\.(mp4|webm|mkv|avi|mov|m4v)($|\?)/i.test(url);
+    const isHlsOrTsStream = !isDirectMp4 || url.includes("m3u8") || url.includes(".ts") || url.includes("/live/");
 
-        hls.loadSource(playUrl);
-        hls.attachMedia(video);
+    if (isHlsOrTsStream && Hls.isSupported()) {
+      hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+        backBufferLength: 60,
+        manifestLoadingTimeOut: 15000,
+        manifestLoadingMaxRetry: 3,
+        levelLoadingTimeOut: 15000,
+        levelLoadingMaxRetry: 3,
+        fragLoadingTimeOut: 20000,
+        fragLoadingMaxRetry: 4,
+        xhrSetup: (xhr) => {
+          xhr.withCredentials = false;
+        },
+      });
 
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          setIsLoading(false);
-          if (autoPlay) {
-            video.play().catch((e) => {
-              console.warn("Autoplay blocked or waiting for user interaction", e);
-              setIsPlaying(false);
-            });
+      hls.loadSource(playUrl);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        setIsLoading(false);
+        if (autoPlay) {
+          video.play().catch((e) => {
+            console.warn("Autoplay blocked or waiting for user interaction", e);
+            setIsPlaying(false);
+          });
+        }
+      });
+
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              if (networkRetryCount < MAX_RETRIES) {
+                networkRetryCount++;
+                console.warn(`HLS Network Error, reconectando (${networkRetryCount}/${MAX_RETRIES})...`);
+                setTimeout(() => {
+                  hls?.startLoad();
+                }, 1000);
+              } else {
+                console.error("HLS Network Error: Limite de reconexão atingido.");
+                if (proxyMode === "direct" && window.location.protocol === "https:") {
+                  // Try falling back to server proxy
+                  console.log("Alternando para o servidor de proxy...");
+                  setProxyMode("server_proxy");
+                } else if (proxyMode === "server_proxy") {
+                  // Try falling back to cors proxy
+                  console.log("Alternando para o proxy CORS...");
+                  setProxyMode("cors_proxy");
+                } else {
+                  setHasError(true);
+                  setErrorMessage("Erro de transmissão de rede. O servidor do canal pode estar temporariamente fora do ar.");
+                  setIsLoading(false);
+                  hls?.destroy();
+                }
+              }
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.warn("HLS Media Error, recuperando áudio e vídeo...");
+              hls?.recoverMediaError();
+              break;
+            default:
+              setHasError(true);
+              setErrorMessage("Não foi possível reproduzir este sinal de mídia.");
+              setIsLoading(false);
+              hls?.destroy();
+              break;
           }
-        });
-
-        hls.on(Hls.Events.ERROR, (_event, data) => {
-          if (data.fatal) {
-            switch (data.type) {
-              case Hls.ErrorTypes.NETWORK_ERROR:
-                console.error("HLS Network Error, attempting recovery...");
-                hls?.startLoad();
-                break;
-              case Hls.ErrorTypes.MEDIA_ERROR:
-                console.error("HLS Media Error, recovering...");
-                hls?.recoverMediaError();
-                break;
-              default:
-                setHasError(true);
-                setErrorMessage("Não foi possível carregar esta transmissão ao vivo.");
-                setIsLoading(false);
-                hls?.destroy();
-                break;
-            }
-          }
-        });
-      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        // Native HLS (Safari / iOS / Apple TV)
-        video.src = playUrl;
-        video.addEventListener("loadedmetadata", () => {
-          setIsLoading(false);
-          if (autoPlay) video.play();
-        });
-      }
+        }
+      });
+    } else if (isHlsOrTsStream && video.canPlayType("application/vnd.apple.mpegurl")) {
+      // Native HLS (Safari / Apple TV / iOS)
+      video.src = playUrl;
+      video.addEventListener("loadedmetadata", () => {
+        setIsLoading(false);
+        if (autoPlay) video.play().catch(() => setIsPlaying(false));
+      });
+      video.onerror = () => {
+        setHasError(true);
+        setErrorMessage("Falha ao reproduzir o canal no reprodutor nativo.");
+        setIsLoading(false);
+      };
     } else {
-      // Standard MP4 / TS direct stream
+      // Standard MP4 / WebM Direct Video
       video.src = playUrl;
       video.onloadeddata = () => setIsLoading(false);
       video.onerror = () => {
-        setHasError(true);
-        setErrorMessage("Erro de carregamento do fluxo de vídeo.");
-        setIsLoading(false);
+        if (proxyMode === "direct") {
+          setProxyMode("server_proxy");
+        } else {
+          setHasError(true);
+          setErrorMessage("Erro ao carregar o arquivo de vídeo.");
+          setIsLoading(false);
+        }
       };
       if (autoPlay) video.play().catch(() => setIsPlaying(false));
     }
@@ -118,7 +165,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         hls.destroy();
       }
     };
-  }, [url, autoPlay]);
+  }, [url, autoPlay, retryAttempt, proxyMode]);
 
   // Handle Play/Pause
   const togglePlay = () => {
@@ -178,14 +225,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const handleRetry = () => {
     setHasError(false);
     setIsLoading(true);
-    const video = videoRef.current;
-    if (video) {
-      const src = video.src;
-      video.src = "";
-      video.src = src;
-      video.load();
-      video.play().catch(console.error);
-    }
+    setProxyMode((prev) => {
+      if (prev === "direct") return "server_proxy";
+      if (prev === "server_proxy") return "cors_proxy";
+      return "direct";
+    });
+    setRetryAttempt((prev) => prev + 1);
   };
 
   return (

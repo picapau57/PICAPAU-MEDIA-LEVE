@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { AppConfig, ParsedM3U, PlaylistItem, SeriesGroup } from "./types";
+import { syncClientSources } from "./utils/m3uParser";
 import { Navbar } from "./components/Navbar";
 import { ChannelGrid } from "./components/ChannelGrid";
 import { MovieCatalog } from "./components/MovieCatalog";
@@ -195,17 +196,49 @@ export default function App() {
   const fetchContent = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch("/api/content");
-      if (res.ok) {
+      const res = await fetch("/api/content").catch(() => null);
+      if (res && res.ok) {
         const data = await res.json();
         if (data && data.channels) {
           setContent(data);
+          try {
+            localStorage.setItem("picapau_cached_content", JSON.stringify(data));
+          } catch {}
+          setIsLoading(false);
           return;
         }
       }
     } catch (err) {
-      console.warn("Backend content fetch error, using default sample content:", err);
+      console.warn("Backend content fetch error, checking local storage:", err);
     }
+
+    // Check cached content in localStorage
+    try {
+      const cached = localStorage.getItem("picapau_cached_content");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && (parsed.channelsCount > 0 || parsed.moviesCount > 0 || parsed.seriesCount > 0)) {
+          setContent(parsed);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // Check saved sources in localStorage and sync on client
+      const savedSources = localStorage.getItem("picapau_sources");
+      if (savedSources) {
+        const sources = JSON.parse(savedSources);
+        if (Array.isArray(sources) && sources.length > 0) {
+          const parsed = await syncClientSources(sources);
+          setContent(parsed);
+          setIsLoading(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Error reading local cached content/sources:", err);
+    }
+
     setContent(DEFAULT_FALLBACK_CONTENT);
     setIsLoading(false);
   }, []);
