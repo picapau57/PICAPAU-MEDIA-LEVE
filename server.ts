@@ -15,9 +15,7 @@ import {
 } from "./src/types";
 
 const PORT = 3000;
-const DATA_FILE = process.env.VERCEL
-  ? path.join("/tmp", "server-data.json")
-  : path.join(process.cwd(), "server-data.json");
+const DATA_FILE = path.join(process.cwd(), "server-data.json");
 
 // Default initial database content
 const DEFAULT_CONFIG: AppConfig = {
@@ -319,6 +317,34 @@ function parseM3UContent(m3uText: string): ParsedM3U {
   };
 }
 
+async function fetchM3UText(url: string, timeoutMs: number = 8000): Promise<string | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) IPTV Player Picapau",
+        "Accept": "*/*",
+      },
+    });
+    if (response.ok) {
+      return await response.text();
+    }
+    console.warn(`M3U URL returned status ${response.status}: ${url}`);
+    return null;
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      console.warn(`Timeout fetching M3U URL (${timeoutMs}ms): ${url}`);
+    } else {
+      console.warn(`Error fetching M3U URL (${url}):`, err?.message || err);
+    }
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // Fetch and combine all active sources
 async function getCombinedContent(): Promise<ParsedM3U> {
   if (cachedParsedData) {
@@ -333,19 +359,9 @@ async function getCombinedContent(): Promise<ParsedM3U> {
     if (src.type === "raw" && src.content) {
       combinedM3U += "\n" + src.content;
     } else if (src.type === "url" && src.url) {
-      try {
-        console.log(`Fetching remote M3U URL: ${src.url}`);
-        const response = await fetch(src.url, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) IPTV Player Picapau",
-          },
-        });
-        if (response.ok) {
-          const text = await response.text();
-          combinedM3U += "\n" + text;
-        }
-      } catch (err) {
-        console.error(`Failed to fetch M3U from URL: ${src.url}`, err);
+      const text = await fetchM3UText(src.url, 10000);
+      if (text) {
+        combinedM3U += "\n" + text;
       }
     }
   }
@@ -424,15 +440,10 @@ async function startServer() {
       const parsed = parseM3UContent(content);
       itemCount = parsed.totalCount;
     } else if (type === "url" && url) {
-      try {
-        const resp = await fetch(url, { headers: { "User-Agent": "PicapauMediaIPTV" } });
-        if (resp.ok) {
-          const txt = await resp.text();
-          const parsed = parseM3UContent(txt);
-          itemCount = parsed.totalCount;
-        }
-      } catch (err) {
-        console.warn("Could not preview remote URL items count:", err);
+      const txt = await fetchM3UText(url, 8000);
+      if (txt) {
+        const parsed = parseM3UContent(txt);
+        itemCount = parsed.totalCount;
       }
     }
 
@@ -480,18 +491,26 @@ async function startServer() {
 
   // Admin - Force Sync Content
   app.post("/api/admin/sources/sync", async (req, res) => {
-    cachedParsedData = null;
-    const content = await getCombinedContent();
-    res.json({
-      success: true,
-      message: "Listas sincronizadas com sucesso!",
-      stats: {
-        total: content.totalCount,
-        channels: content.channelsCount,
-        movies: content.moviesCount,
-        series: content.seriesCount,
-      },
-    });
+    try {
+      cachedParsedData = null;
+      const content = await getCombinedContent();
+      res.json({
+        success: true,
+        message: "Listas sincronizadas com sucesso!",
+        stats: {
+          total: content.totalCount,
+          channels: content.channelsCount,
+          movies: content.moviesCount,
+          series: content.seriesCount,
+        },
+      });
+    } catch (err: any) {
+      console.error("Error syncing sources:", err);
+      res.status(500).json({
+        success: false,
+        error: err?.message || "Erro ao sincronizar listas no servidor.",
+      });
+    }
   });
 
   // Admin - Users CRUD
@@ -695,7 +714,7 @@ JSON esperado:
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else if (!process.env.VERCEL) {
+  } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
@@ -703,13 +722,9 @@ JSON esperado:
     });
   }
 
-  if (!process.env.VERCEL) {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`PICAPAU MEDIA LEVE Server running on http://0.0.0.0:${PORT}`);
-    });
-  }
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`PICAPAU MEDIA LEVE Server running on http://0.0.0.0:${PORT}`);
+  });
 }
 
 startServer();
-
-export default app;

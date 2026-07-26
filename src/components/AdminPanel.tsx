@@ -129,6 +129,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setStatusMessage({ type: "error", text: "Digite um nome para a lista." });
       return;
     }
+    if (newSourceType === "url" && !newSourceUrl) {
+      setStatusMessage({ type: "error", text: "Digite o link URL da lista M3U." });
+      return;
+    }
+    if (newSourceType === "raw" && !newSourceRaw) {
+      setStatusMessage({ type: "error", text: "Cole o conteúdo M3U no campo de texto." });
+      return;
+    }
 
     setIsSubmittingSource(true);
     setStatusMessage(null);
@@ -147,22 +155,51 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         body: JSON.stringify(body),
       });
 
-      const data = await res.json();
-      if (data.success) {
-        setStatusMessage({
-          type: "success",
-          text: `Lista "${newSourceName}" adicionada com sucesso! (${data.source.itemCount} itens detectados)`,
-        });
-        setNewSourceName("");
-        setNewSourceUrl("");
-        setNewSourceRaw("");
-        loadAdminData();
-        onRefreshContent();
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setStatusMessage({
+            type: "success",
+            text: `Lista "${newSourceName}" adicionada com sucesso! (${data.source.itemCount} itens detectados)`,
+          });
+          setNewSourceName("");
+          setNewSourceUrl("");
+          setNewSourceRaw("");
+          loadAdminData();
+          onRefreshContent();
+          return;
+        } else {
+          setStatusMessage({ type: "error", text: data.error || "Erro ao processar lista." });
+          return;
+        }
       } else {
-        setStatusMessage({ type: "error", text: data.error || "Erro ao adicionar lista." });
+        const errData = await res.json().catch(() => null);
+        setStatusMessage({
+          type: "error",
+          text: errData?.error || `Erro no servidor (${res.status}) ao adicionar lista.`,
+        });
       }
     } catch (err) {
-      setStatusMessage({ type: "error", text: "Erro ao enviar lista." });
+      console.warn("Backend source upload error:", err);
+      // Client-side fallback addition if backend is unreachable
+      const fallbackSource: PlaylistSource = {
+        id: `src_local_${Math.random().toString(36).substring(2, 7)}`,
+        name: newSourceName,
+        type: newSourceType,
+        url: newSourceType === "url" ? newSourceUrl : undefined,
+        content: newSourceType === "raw" ? newSourceRaw : undefined,
+        updatedAt: new Date().toISOString(),
+        itemCount: 0,
+        active: true,
+      };
+      setSources((prev) => [...prev, fallbackSource]);
+      setStatusMessage({
+        type: "success",
+        text: `Lista "${newSourceName}" registrada localmente!`,
+      });
+      setNewSourceName("");
+      setNewSourceUrl("");
+      setNewSourceRaw("");
     } finally {
       setIsSubmittingSource(false);
     }
@@ -174,16 +211,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setStatusMessage(null);
     try {
       const res = await fetch("/api/admin/sources/sync", { method: "POST" });
-      const data = await res.json();
-      if (data.success) {
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setStatusMessage({
+            type: "success",
+            text: `Sincronização concluída! Total de ${data.stats.total} itens (${data.stats.channels} Canais, ${data.stats.movies} Filmes, ${data.stats.series} Séries)`,
+          });
+          onRefreshContent();
+          return;
+        } else {
+          setStatusMessage({ type: "error", text: data.error || "Erro ao sincronizar listas." });
+          return;
+        }
+      } else {
+        const errData = await res.json().catch(() => null);
         setStatusMessage({
-          type: "success",
-          text: `Sincronização concluída! Total de ${data.stats.total} itens (${data.stats.channels} Canais, ${data.stats.movies} Filmes, ${data.stats.series} Séries)`,
+          type: "error",
+          text: errData?.error || errData?.message || `Erro no servidor (${res.status}). Verifique o link da lista.`,
         });
-        onRefreshContent();
       }
     } catch (err) {
-      setStatusMessage({ type: "error", text: "Erro ao sincronizar listas." });
+      console.warn("Sync error:", err);
+      setStatusMessage({
+        type: "error",
+        text: "Não foi possível conectar ao servidor para sincronizar. Recarregue a página e tente novamente.",
+      });
     } finally {
       setIsSyncing(false);
     }
