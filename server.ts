@@ -429,64 +429,83 @@ async function startServer() {
 
   // Admin - Add M3U Source (Link URL or Raw Text)
   app.post("/api/admin/sources", async (req, res) => {
-    const { name, type, url, content } = req.body;
+    try {
+      const { name, type, url, content } = req.body;
 
-    if (!name || !type) {
-      return res.status(400).json({ error: "Nome e Tipo são obrigatórios." });
-    }
-
-    let itemCount = 0;
-    if (type === "raw" && content) {
-      const parsed = parseM3UContent(content);
-      itemCount = parsed.totalCount;
-    } else if (type === "url" && url) {
-      const txt = await fetchM3UText(url, 8000);
-      if (txt) {
-        const parsed = parseM3UContent(txt);
-        itemCount = parsed.totalCount;
+      if (!name || !type) {
+        return res.status(400).json({ error: "Nome e Tipo são obrigatórios." });
       }
+
+      let itemCount = 0;
+      if (type === "raw" && content) {
+        const parsed = parseM3UContent(content);
+        itemCount = parsed.totalCount;
+      } else if (type === "url" && url) {
+        const txt = await fetchM3UText(url, 8000);
+        if (txt) {
+          const parsed = parseM3UContent(txt);
+          itemCount = parsed.totalCount;
+        }
+      }
+
+      const newSource: PlaylistSource = {
+        id: `src_${Math.random().toString(36).substring(2, 9)}`,
+        name,
+        type,
+        url,
+        content,
+        updatedAt: new Date().toISOString(),
+        itemCount,
+        active: true,
+      };
+
+      store.sources.push(newSource);
+      saveServerStore();
+      cachedParsedData = null; // Invalidate cache so updated channels load immediately
+
+      res.json({ success: true, source: newSource });
+    } catch (err: any) {
+      console.error("Error adding source:", err);
+      res.status(500).json({
+        success: false,
+        error: err?.message || "Erro no servidor ao adicionar lista.",
+      });
     }
-
-    const newSource: PlaylistSource = {
-      id: `src_${Math.random().toString(36).substring(2, 9)}`,
-      name,
-      type,
-      url,
-      content,
-      updatedAt: new Date().toISOString(),
-      itemCount,
-      active: true,
-    };
-
-    store.sources.push(newSource);
-    saveServerStore();
-
-    res.json({ success: true, source: newSource });
   });
 
-  // Admin - Toggle / Delete Source
+  // Admin - Toggle / Edit Source
   app.put("/api/admin/sources/:id", (req, res) => {
-    const { id } = req.params;
-    const { active, name, url, content } = req.body;
+    try {
+      const { id } = req.params;
+      const { active, name, url, content } = req.body;
 
-    const source = store.sources.find((s) => s.id === id);
-    if (!source) return res.status(404).json({ error: "Fonte não encontrada." });
+      const source = store.sources.find((s) => s.id === id);
+      if (!source) return res.status(404).json({ error: "Fonte não encontrada." });
 
-    if (active !== undefined) source.active = active;
-    if (name) source.name = name;
-    if (url !== undefined) source.url = url;
-    if (content !== undefined) source.content = content;
-    source.updatedAt = new Date().toISOString();
+      if (active !== undefined) source.active = active;
+      if (name) source.name = name;
+      if (url !== undefined) source.url = url;
+      if (content !== undefined) source.content = content;
+      source.updatedAt = new Date().toISOString();
 
-    saveServerStore();
-    res.json({ success: true, source });
+      saveServerStore();
+      cachedParsedData = null;
+      res.json({ success: true, source });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Erro ao atualizar fonte." });
+    }
   });
 
   app.delete("/api/admin/sources/:id", (req, res) => {
-    const { id } = req.params;
-    store.sources = store.sources.filter((s) => s.id !== id);
-    saveServerStore();
-    res.json({ success: true });
+    try {
+      const { id } = req.params;
+      store.sources = store.sources.filter((s) => s.id !== id);
+      saveServerStore();
+      cachedParsedData = null;
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Erro ao excluir fonte." });
+    }
   });
 
   // Admin - Force Sync Content
