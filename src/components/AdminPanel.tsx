@@ -5,6 +5,7 @@ import { generate10SampleMovieLists } from "../utils/sampleMovieLists";
 import {
   fetchCloudSources,
   saveCloudSources,
+  saveCloudParsedContent,
   fetchCloudUsers,
   saveCloudUsers,
   fetchCloudConfig,
@@ -369,13 +370,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       fetch("/api/admin/sources", { method: "DELETE" }).catch(() => null);
 
       setSources([]);
-      localStorage.removeItem("picapau_sources");
-      localStorage.removeItem("picapau_cached_content");
+      localStorage.setItem("picapau_sources", "[]");
 
-      // Save empty list to Firebase Cloud
+      // Save empty list and empty catalog to Firebase Cloud
       await saveCloudSources([]);
+      const emptyParsed = await syncClientSources([]);
+      await saveCloudParsedContent(emptyParsed);
 
-      const parsed = await syncClientSources([]);
+      localStorage.setItem("picapau_cached_content", JSON.stringify(emptyParsed));
+
       onRefreshContent();
       setStatusMessage({
         type: "success",

@@ -49,7 +49,7 @@ function sanitizeForFirestore<T>(data: T): T {
 export async function fetchCloudSources(): Promise<PlaylistSource[] | null> {
   try {
     const querySnapshot = await getDocs(collection(db, SOURCES_COL));
-    if (querySnapshot.empty) return null;
+    if (querySnapshot.empty) return [];
     const sources: PlaylistSource[] = [];
     querySnapshot.forEach((docSnap) => {
       sources.push(docSnap.data() as PlaylistSource);

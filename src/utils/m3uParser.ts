@@ -361,7 +361,7 @@ export async function syncClientSources(sources: PlaylistSource[]): Promise<Pars
 
   // Persist to Cloud Firestore so all devices on any network see updated movies, series & live TV
   saveCloudParsedContent(parsed).catch((err) => console.warn("Cloud parsed content sync error:", err));
-  if (sources && sources.length > 0) {
+  if (sources) {
     saveCloudSources(sources).catch((err) => console.warn("Cloud sources sync error:", err));
   }
 

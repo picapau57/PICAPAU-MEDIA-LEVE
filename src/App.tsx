@@ -215,10 +215,7 @@ export default function App() {
     // 1. Check Cloud Firestore for globally synced parsed content (Movies, Series, Channels)
     try {
       const cloudParsed = await fetchCloudParsedContent();
-      if (
-        cloudParsed &&
-        (cloudParsed.channelsCount > 0 || cloudParsed.moviesCount > 0 || cloudParsed.seriesCount > 0)
-      ) {
+      if (cloudParsed !== null) {
         setContent(cloudParsed);
         try {
           localStorage.setItem("picapau_cached_content", JSON.stringify(cloudParsed));
@@ -233,7 +230,7 @@ export default function App() {
     // 2. Check Cloud Firestore for saved playlist sources
     try {
       const cloudSources = await fetchCloudSources();
-      if (cloudSources && cloudSources.length > 0) {
+      if (cloudSources !== null) {
         localStorage.setItem("picapau_sources", JSON.stringify(cloudSources));
         const parsed = await syncClientSources(cloudSources);
         setContent(parsed);
@@ -244,52 +241,29 @@ export default function App() {
       console.warn("Error fetching cloud sources:", err);
     }
 
-    // 3. Fallback to API / LocalStorage
+    // 3. Check cached content in localStorage
     try {
-      const res = await fetch("/api/content").catch(() => null);
-      if (res && res.ok) {
-        const data = await res.json();
-        if (data && data.channels) {
-          setContent(data);
-          try {
-            localStorage.setItem("picapau_cached_content", JSON.stringify(data));
-          } catch {}
-          setIsLoading(false);
-          return;
-        }
-      }
-    } catch (err) {
-      console.warn("Backend content fetch error, checking local storage:", err);
-    }
-
-    // Check cached content in localStorage
-    try {
-      const cached = localStorage.getItem("picapau_cached_content");
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed && (parsed.channelsCount > 0 || parsed.moviesCount > 0 || parsed.seriesCount > 0)) {
-          setContent(parsed);
-          setIsLoading(false);
-          return;
-        }
-      }
-
-      // Check saved sources in localStorage and sync on client
       const savedSources = localStorage.getItem("picapau_sources");
-      if (savedSources) {
+      if (savedSources !== null) {
         const sources = JSON.parse(savedSources);
-        if (Array.isArray(sources) && sources.length > 0) {
-          const parsed = await syncClientSources(sources);
-          setContent(parsed);
-          setIsLoading(false);
-          return;
-        }
+        const parsed = await syncClientSources(sources);
+        setContent(parsed);
+        setIsLoading(false);
+        return;
+      }
+
+      const cached = localStorage.getItem("picapau_cached_content");
+      if (cached !== null) {
+        const parsed = JSON.parse(cached);
+        setContent(parsed);
+        setIsLoading(false);
+        return;
       }
     } catch (err) {
       console.warn("Error reading local cached content/sources:", err);
     }
 
-    // 4. Fallback: Initialize with 10 sample movie lists and publish to Cloud Firestore
+    // 4. Fallback: First time load only - Initialize with 10 sample movie lists
     try {
       const initial10Sources = generate10SampleMovieLists();
       localStorage.setItem("picapau_sources", JSON.stringify(initial10Sources));
