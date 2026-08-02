@@ -1,6 +1,6 @@
 import { PlaylistSource } from "../types";
 
-export function generate10SampleMovieLists(): PlaylistSource[] {
+export function generate15SampleMovieLists(): PlaylistSource[] {
   const listsData = [
     {
       num: 1,
@@ -139,6 +139,71 @@ export function generate10SampleMovieLists(): PlaylistSource[] {
         { title: "For Bigger Joyrides 4K", logo: "https://images.unsplash.com/photo-1574267432553-4b4628081c31?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4" },
         { title: "Subaru Motorsport 4K Ultra", logo: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4" },
       ]
+    },
+    {
+      num: 11,
+      name: "Lista 11: Filmes - Heróis & Quadrinhos",
+      group: "FILMES | HERÓIS",
+      movies: [
+        { title: "O Guardião da Cidade 4K", logo: "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4" },
+        { title: "Liga do Amanhã Heróis", logo: "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4" },
+        { title: "O Cavaleiro das Sombras", logo: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" },
+        { title: "Desafio Cósmico Heróis", logo: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" },
+        { title: "A Força Suprema 1080p", logo: "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4" },
+        { title: "Multiverso em Chamas", logo: "https://images.unsplash.com/photo-1614728894747-a83421e2b9c9?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4" },
+      ]
+    },
+    {
+      num: 12,
+      name: "Lista 12: Filmes - Policial & Crime",
+      group: "FILMES | POLICIAL",
+      movies: [
+        { title: "Dossiê Confidencial Crime", logo: "https://images.unsplash.com/photo-1485846234645-a62644f84728?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4" },
+        { title: "Invasão no Distrito 9", logo: "https://images.unsplash.com/photo-1509248961158-e54f6934749c?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4" },
+        { title: "Negociação de Risco", logo: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4" },
+        { title: "Perseguição Policial Noturna", logo: "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" },
+        { title: "Máfia & Vingança VIP", logo: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" },
+        { title: "Operação Subterrânea", logo: "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4" },
+        { title: "O Investigador Final", logo: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4" },
+      ]
+    },
+    {
+      num: 13,
+      name: "Lista 13: Filmes - Fantasia & Magia",
+      group: "FILMES | FANTASIA",
+      movies: [
+        { title: "O Reino dos Dragões", logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8f/Sintel_poster.jpg/400px-Sintel_poster.jpg", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4" },
+        { title: "A Floresta dos Feitiços", logo: "https://images.unsplash.com/photo-1448375240586-882707db888b?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4" },
+        { title: "O Portal das Estrelas Magia", logo: "https://images.unsplash.com/photo-1507499739999-097706ad8914?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4" },
+        { title: "A Lenda da Espada Dourada", logo: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" },
+        { title: "Guardiões do Templo Perdido", logo: "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" },
+        { title: "O elixir da Imortalidade", logo: "https://images.unsplash.com/photo-1519741497674-611481863552?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4" },
+      ]
+    },
+    {
+      num: 14,
+      name: "Lista 14: Filmes - Música & Shows",
+      group: "FILMES | MÚSICA",
+      movies: [
+        { title: "O Ritmo das Ruas Musical", logo: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" },
+        { title: "Sinfonia do Espaço Show 4K", logo: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4" },
+        { title: "A Estrela do Rock Filme", logo: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4" },
+        { title: "Jazz ao Pôr do Sol", logo: "https://images.unsplash.com/photo-1511192336575-5a79af67a629?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4" },
+        { title: "Nossa Canção Filme Drama", logo: "https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4" },
+      ]
+    },
+    {
+      num: 15,
+      name: "Lista 15: Filmes - Velozes & Esportes",
+      group: "FILMES | ESPORTES",
+      movies: [
+        { title: "Subaru Offroad Rally Extreme 4K", logo: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4" },
+        { title: "Velocidade Máxima Asfalto", logo: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4" },
+        { title: "Desafio na Montanha Esporte", logo: "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" },
+        { title: "A Grande Final Campeões", logo: "https://images.unsplash.com/photo-1517649763962-0c623266010b?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4" },
+        { title: "Lendas do Surf 4K", logo: "https://images.unsplash.com/photo-1502680390469-be75c86b636f?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" },
+        { title: "A Corrida do Século", logo: "https://images.unsplash.com/photo-1511919884226-fd3cad34687c?w=400", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4" },
+      ]
     }
   ];
 
@@ -159,3 +224,7 @@ export function generate10SampleMovieLists(): PlaylistSource[] {
     };
   });
 }
+
+// Backwards compatibility alias
+export const generate10SampleMovieLists = generate15SampleMovieLists;
+

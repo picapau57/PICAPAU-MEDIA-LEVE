@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { AppConfig, ParsedM3U, PlaylistItem, SeriesGroup } from "./types";
 import { syncClientSources } from "./utils/m3uParser";
-import { generate10SampleMovieLists } from "./utils/sampleMovieLists";
+import { generate15SampleMovieLists } from "./utils/sampleMovieLists";
 import {
   fetchCloudConfig,
   fetchCloudParsedContent,
@@ -263,13 +263,13 @@ export default function App() {
       console.warn("Error reading local cached content/sources:", err);
     }
 
-    // 4. Fallback: First time load only - Initialize with 10 sample movie lists
+    // 4. Fallback: First time load only - Initialize with 15 sample movie lists
     try {
-      const initial10Sources = generate10SampleMovieLists();
-      localStorage.setItem("picapau_sources", JSON.stringify(initial10Sources));
-      saveCloudSources(initial10Sources).catch(() => null);
+      const initial15Sources = generate15SampleMovieLists();
+      localStorage.setItem("picapau_sources", JSON.stringify(initial15Sources));
+      saveCloudSources(initial15Sources).catch(() => null);
 
-      const parsed = await syncClientSources(initial10Sources);
+      const parsed = await syncClientSources(initial15Sources);
       saveCloudParsedContent(parsed).catch(() => null);
 
       setContent(parsed);

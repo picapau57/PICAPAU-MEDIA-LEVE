@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { AppConfig, PlaylistSource, UserAccount } from "../types";
 import { syncClientSources, normalizeUrl } from "../utils/m3uParser";
-import { generate10SampleMovieLists } from "../utils/sampleMovieLists";
+import { generate15SampleMovieLists } from "../utils/sampleMovieLists";
 import {
   fetchCloudSources,
   saveCloudSources,
@@ -391,15 +391,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // Auto Load 10 Sample Movie Lists
-  const handleLoad10MovieLists = async () => {
-    if (sources.length > 0 && !confirm("Deseja adicionar as 10 listas de filmes demonstrativas às suas listas atuais?")) {
+  // Auto Load 15 Sample Movie Lists
+  const handleLoad15MovieLists = async () => {
+    if (sources.length > 0 && !confirm("Deseja adicionar as 15 listas de filmes demonstrativas (5 a 10 filmes cada) às suas listas atuais?")) {
       return;
     }
     try {
       setIsSyncing(true);
-      const new10Lists = generate10SampleMovieLists();
-      const updatedSources = [...sources, ...new10Lists];
+      const new15Lists = generate15SampleMovieLists();
+      const updatedSources = [...sources, ...new15Lists];
 
       setSources(updatedSources);
       localStorage.setItem("picapau_sources", JSON.stringify(updatedSources));
@@ -408,13 +408,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       await saveCloudSources(updatedSources);
 
       const parsed = await syncClientSources(updatedSources);
+      await saveCloudParsedContent(parsed);
+      localStorage.setItem("picapau_cached_content", JSON.stringify(parsed));
+
       onRefreshContent();
       setStatusMessage({
         type: "success",
-        text: `10 Listas com Filmes criadas e sincronizadas! Total de ${parsed.moviesCount} filmes carregados.`,
+        text: `15 Listas com Filmes criadas e sincronizadas! Total de ${parsed.moviesCount} filmes carregados.`,
       });
     } catch (err) {
-      setStatusMessage({ type: "error", text: "Erro ao carregar as 10 listas de filmes." });
+      setStatusMessage({ type: "error", text: "Erro ao carregar as 15 listas de filmes." });
     } finally {
       setIsSyncing(false);
     }
@@ -797,13 +800,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleLoad10MovieLists}
+                  onClick={handleLoad15MovieLists}
                   disabled={isSyncing}
                   className="px-3 py-1.5 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 font-bold text-xs rounded-xl border border-orange-500/30 flex items-center space-x-1.5 transition-colors"
-                  title="Gerar automaticamente 10 listas de filmes demonstrativos (5 a 10 filmes cada)"
+                  title="Gerar automaticamente 15 listas de filmes demonstrativos (5 a 10 filmes cada)"
                 >
                   <Film className="w-3.5 h-3.5 shrink-0" />
-                  <span>GERAR 10 LISTAS (FILMES)</span>
+                  <span>GERAR 15 LISTAS (FILMES)</span>
                 </button>
 
                 <button
