@@ -1,4 +1,5 @@
 import { ParsedM3U, PlaylistItem, ContentType, SeriesGroup, PlaylistSource } from "../types";
+import { saveCloudParsedContent, saveCloudSources } from "../lib/firebase";
 
 export function normalizeUrl(url: string): string {
   let trimmed = url.trim();
@@ -357,5 +358,12 @@ export async function syncClientSources(sources: PlaylistSource[]): Promise<Pars
   } catch {
     // quota handled
   }
+
+  // Persist to Cloud Firestore so all devices on any network see updated movies, series & live TV
+  saveCloudParsedContent(parsed).catch((err) => console.warn("Cloud parsed content sync error:", err));
+  if (sources && sources.length > 0) {
+    saveCloudSources(sources).catch((err) => console.warn("Cloud sources sync error:", err));
+  }
+
   return parsed;
 }

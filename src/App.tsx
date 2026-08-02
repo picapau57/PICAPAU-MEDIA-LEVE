@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { AppConfig, ParsedM3U, PlaylistItem, SeriesGroup } from "./types";
 import { syncClientSources } from "./utils/m3uParser";
+import {
+  fetchCloudConfig,
+  fetchCloudParsedContent,
+  fetchCloudSources,
+  fetchCloudFavorites,
+  saveCloudFavorites,
+} from "./lib/firebase";
 import { Navbar } from "./components/Navbar";
 import { ChannelGrid } from "./components/ChannelGrid";
 import { MovieCatalog } from "./components/MovieCatalog";
@@ -179,9 +186,15 @@ export default function App() {
   const [isLoginOpen, setIsLoginOpen] = useState<boolean>(false);
   const [isRemoteGuideOpen, setIsRemoteGuideOpen] = useState<boolean>(false);
 
-  // Fetch Config
+  // Fetch Config (Firebase Cloud + API Fallback)
   const fetchConfig = async () => {
     try {
+      const cloudCfg = await fetchCloudConfig();
+      if (cloudCfg && cloudCfg.appName) {
+        setConfig((prev) => ({ ...prev, ...cloudCfg }));
+        return;
+      }
+
       const res = await fetch("/api/config");
       if (res.ok) {
         const data = await res.json();
@@ -192,9 +205,43 @@ export default function App() {
     }
   };
 
-  // Fetch Content
+  // Fetch Content (Firebase Cloud Firestore -> API -> LocalStorage -> Default)
   const fetchContent = useCallback(async () => {
     setIsLoading(true);
+
+    // 1. Check Cloud Firestore for globally synced parsed content (Movies, Series, Channels)
+    try {
+      const cloudParsed = await fetchCloudParsedContent();
+      if (
+        cloudParsed &&
+        (cloudParsed.channelsCount > 0 || cloudParsed.moviesCount > 0 || cloudParsed.seriesCount > 0)
+      ) {
+        setContent(cloudParsed);
+        try {
+          localStorage.setItem("picapau_cached_content", JSON.stringify(cloudParsed));
+        } catch {}
+        setIsLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.warn("Error fetching cloud parsed content:", err);
+    }
+
+    // 2. Check Cloud Firestore for saved playlist sources
+    try {
+      const cloudSources = await fetchCloudSources();
+      if (cloudSources && cloudSources.length > 0) {
+        localStorage.setItem("picapau_sources", JSON.stringify(cloudSources));
+        const parsed = await syncClientSources(cloudSources);
+        setContent(parsed);
+        setIsLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.warn("Error fetching cloud sources:", err);
+    }
+
+    // 3. Fallback to API / LocalStorage
     try {
       const res = await fetch("/api/content").catch(() => null);
       if (res && res.ok) {
@@ -248,11 +295,25 @@ export default function App() {
     fetchContent();
   }, [fetchContent]);
 
+  // Load User Favorites from Firebase Cloud when currentUser changes
+  useEffect(() => {
+    if (!currentUser?.code) return;
+    fetchCloudFavorites(currentUser.code).then((favs) => {
+      if (favs && favs.length > 0) {
+        setFavorites(favs);
+        localStorage.setItem("picapau_favs", JSON.stringify(favs));
+      }
+    }).catch(() => null);
+  }, [currentUser]);
+
   // Handle Favorites toggle
   const toggleFavorite = (id: string) => {
     setFavorites((prev) => {
       const updated = prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
       localStorage.setItem("picapau_favs", JSON.stringify(updated));
+      if (currentUser?.code) {
+        saveCloudFavorites(currentUser.code, updated).catch(() => null);
+      }
       return updated;
     });
   };

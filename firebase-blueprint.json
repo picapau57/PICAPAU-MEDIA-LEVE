@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "sources": {
+      "title": "sources",
+      "description": "IPTV M3U playlist sources added by admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "url": { "type": "string" },
+        "content": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "itemCount": { "type": "number" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["id", "name"]
+    },
+    "parsedContent": {
+      "title": "parsedContent",
+      "description": "Global parsed IPTV catalog items (Channels, Movies, Series)",
+      "type": "object",
+      "properties": {
+        "updatedAt": { "type": "string" },
+        "channelsCount": { "type": "number" },
+        "moviesCount": { "type": "number" },
+        "seriesCount": { "type": "number" }
+      }
+    },
+    "userAccounts": {
+      "title": "userAccounts",
+      "description": "User login accounts created by admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "code": { "type": "string" },
+        "pin": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "expiresAt": { "type": "string" }
+      },
+      "required": ["id", "code"]
+    },
+    "appConfig": {
+      "title": "appConfig",
+      "description": "Global application configuration",
+      "type": "object",
+      "properties": {
+        "appName": { "type": "string" },
+        "noticeText": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    }
+  }
+}

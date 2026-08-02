@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { X, Sparkles, Key, Download, CheckCircle2, AlertCircle } from "lucide-react";
+import { fetchCloudUsers } from "../lib/firebase";
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -87,10 +88,46 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         }
       }
     } catch (err) {
-      console.warn("Backend unavailable, executing fallback login:", err);
+      console.warn("Backend unavailable, checking Cloud Firestore accounts:", err);
     }
 
-    // Fallback login if backend is unreachable or returning non-200
+    // Try Cloud Firestore User Authentication
+    try {
+      const cloudUsers = await fetchCloudUsers();
+      if (cloudUsers && cloudUsers.length > 0) {
+        const searchCode = (code || "").trim();
+        const searchUser = username.trim().toLowerCase();
+
+        const found = cloudUsers.find((u) => {
+          if (!u.active) return false;
+          if (!useCredentials && searchCode) {
+            return u.code === searchCode;
+          }
+          if (useCredentials && searchUser) {
+            return (
+              (u.username && u.username.toLowerCase() === searchUser) ||
+              (u.name && u.name.toLowerCase() === searchUser)
+            );
+          }
+          return false;
+        });
+
+        if (found) {
+          onLoginSuccess({
+            name: found.name || found.username || "Usuário Cadastrado",
+            code: found.code,
+            expiresAt: found.expiresAt || "Ilimitado",
+          });
+          onClose();
+          setIsLoading(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Error verifying Cloud Firestore accounts:", err);
+    }
+
+    // Fallback login if backend & cloud firestore returned no match
     const success = performFallbackLogin();
     if (!success) {
       setErrorMessage("Não foi possível conectar ao servidor. Verifique os dados digitados.");

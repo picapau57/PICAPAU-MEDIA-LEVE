@@ -3,6 +3,14 @@ import { AppConfig, PlaylistSource, UserAccount } from "../types";
 import { syncClientSources, normalizeUrl } from "../utils/m3uParser";
 import { generate10SampleMovieLists } from "../utils/sampleMovieLists";
 import {
+  fetchCloudSources,
+  saveCloudSources,
+  fetchCloudUsers,
+  saveCloudUsers,
+  fetchCloudConfig,
+  saveCloudConfig,
+} from "../lib/firebase";
+import {
   ShieldAlert,
   Link,
   FileText,
@@ -73,30 +81,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
-  // Fetch Admin Data
+  // Fetch Admin Data from Cloud Firestore & API
   const loadAdminData = async () => {
     try {
-      const [srcRes, usrRes] = await Promise.all([
-        fetch("/api/admin/sources").catch(() => null),
-        fetch("/api/admin/users").catch(() => null),
-      ]);
-
-      if (srcRes && srcRes.ok) {
-        const srcData = await srcRes.json();
-        if (Array.isArray(srcData)) {
-          setSources(srcData);
-          localStorage.setItem("picapau_sources", JSON.stringify(srcData));
-        }
+      // 1. Try Cloud Firestore sources
+      const cloudSources = await fetchCloudSources();
+      if (cloudSources && cloudSources.length > 0) {
+        setSources(cloudSources);
+        localStorage.setItem("picapau_sources", JSON.stringify(cloudSources));
       } else {
-        const saved = localStorage.getItem("picapau_sources");
-        if (saved) setSources(JSON.parse(saved));
+        const srcRes = await fetch("/api/admin/sources").catch(() => null);
+        if (srcRes && srcRes.ok) {
+          const srcData = await srcRes.json();
+          if (Array.isArray(srcData)) {
+            setSources(srcData);
+            localStorage.setItem("picapau_sources", JSON.stringify(srcData));
+          }
+        } else {
+          const saved = localStorage.getItem("picapau_sources");
+          if (saved) setSources(JSON.parse(saved));
+        }
       }
 
-      if (usrRes && usrRes.ok) {
-        const usrData = await usrRes.json();
-        if (Array.isArray(usrData)) {
-          setUsers(usrData);
+      // 2. Try Cloud Firestore users
+      const cloudUsers = await fetchCloudUsers();
+      if (cloudUsers && cloudUsers.length > 0) {
+        setUsers(cloudUsers);
+      } else {
+        const usrRes = await fetch("/api/admin/users").catch(() => null);
+        if (usrRes && usrRes.ok) {
+          const usrData = await usrRes.json();
+          if (Array.isArray(usrData)) {
+            setUsers(usrData);
+          }
         }
+      }
+
+      // 3. Try Cloud Firestore config
+      const cloudCfg = await fetchCloudConfig();
+      if (cloudCfg) {
+        setConfig((prev) => ({ ...prev, ...cloudCfg }));
       }
     } catch (err) {
       console.error("Error loading admin data:", err);
@@ -207,7 +231,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         console.warn("LocalStorage save error:", err);
       }
 
-      // Run client sync so content is parsed immediately
+      // Save to Firebase Firestore Cloud
+      await saveCloudSources(updatedSources);
+
+      // Run client sync so content is parsed and saved to Firestore immediately
       const parsed = await syncClientSources(updatedSources);
 
       setStatusMessage({
@@ -294,6 +321,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setSources(updatedSources);
       localStorage.setItem("picapau_sources", JSON.stringify(updatedSources));
 
+      // Save to Firebase Cloud
+      await saveCloudSources(updatedSources);
+
       // Update backend if possible
       fetch(`/api/admin/sources/${id}`, {
         method: "PUT",
@@ -317,6 +347,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const updatedSources = sources.filter((s) => s.id !== id);
       setSources(updatedSources);
       localStorage.setItem("picapau_sources", JSON.stringify(updatedSources));
+
+      // Save to Firebase Cloud
+      await saveCloudSources(updatedSources);
+
       await syncClientSources(updatedSources);
       onRefreshContent();
       setStatusMessage({ type: "success", text: "Lista removida com sucesso." });
@@ -337,6 +371,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setSources([]);
       localStorage.removeItem("picapau_sources");
       localStorage.removeItem("picapau_cached_content");
+
+      // Save empty list to Firebase Cloud
+      await saveCloudSources([]);
 
       const parsed = await syncClientSources([]);
       onRefreshContent();
@@ -364,6 +401,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setSources(updatedSources);
       localStorage.setItem("picapau_sources", JSON.stringify(updatedSources));
 
+      // Save to Firebase Cloud
+      await saveCloudSources(updatedSources);
+
       const parsed = await syncClientSources(updatedSources);
       onRefreshContent();
       setStatusMessage({
@@ -385,8 +425,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       return;
     }
 
+    const generatedCode = newUserCode.trim() || Math.floor(100000 + Math.random() * 900000).toString();
+    const newUserObj: UserAccount = {
+      id: `usr_${Math.random().toString(36).substring(2, 9)}`,
+      name: newUserName.trim(),
+      username: newUserUsername.trim() || undefined,
+      password: newUserPassword.trim() || undefined,
+      code: generatedCode,
+      expiresAt: newUserExpiration || "2028-12-31",
+      active: true,
+      maxConnections: 2,
+      createdAt: new Date().toISOString(),
+    };
+
     try {
-      const res = await fetch("/api/admin/users", {
+      fetch("/api/admin/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -396,20 +449,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           code: newUserCode,
           expiresAt: newUserExpiration,
         }),
-      });
+      }).catch(() => null);
 
-      const data = await res.json();
-      if (data.success) {
-        setStatusMessage({
-          type: "success",
-          text: `Usuário "${data.user.name}" criado com Código: ${data.user.code}`,
-        });
-        setNewUserName("");
-        setNewUserUsername("");
-        setNewUserPassword("");
-        setNewUserCode("");
-        loadAdminData();
-      }
+      const updatedUsers = [...users, newUserObj];
+      setUsers(updatedUsers);
+      await saveCloudUsers(updatedUsers);
+
+      setStatusMessage({
+        type: "success",
+        text: `Usuário "${newUserObj.name}" criado e salvo na nuvem com Código: ${newUserObj.code}`,
+      });
+      setNewUserName("");
+      setNewUserUsername("");
+      setNewUserPassword("");
+      setNewUserCode("");
     } catch (err) {
       setStatusMessage({ type: "error", text: "Erro ao criar conta de usuário." });
     }
@@ -418,12 +471,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Toggle User Status
   const handleToggleUser = async (user: UserAccount) => {
     try {
-      await fetch(`/api/admin/users/${user.id}`, {
+      const updatedUsers = users.map((u) => (u.id === user.id ? { ...u, active: !u.active } : u));
+      setUsers(updatedUsers);
+      await saveCloudUsers(updatedUsers);
+
+      fetch(`/api/admin/users/${user.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ active: !user.active }),
-      });
-      loadAdminData();
+      }).catch(() => null);
     } catch (err) {
       console.error(err);
     }
@@ -433,8 +489,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleDeleteUser = async (id: string) => {
     if (!confirm("Remover esta conta de usuário?")) return;
     try {
-      await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
-      loadAdminData();
+      const updatedUsers = users.filter((u) => u.id !== id);
+      setUsers(updatedUsers);
+      await saveCloudUsers(updatedUsers);
+
+      fetch(`/api/admin/users/${id}`, { method: "DELETE" }).catch(() => null);
     } catch (err) {
       console.error(err);
     }
@@ -444,15 +503,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("/api/admin/config", {
+      await saveCloudConfig(config);
+
+      fetch("/api/admin/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin: adminPinInput || "1234", ...config }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setStatusMessage({ type: "success", text: "Configurações salvas com sucesso!" });
-      }
+      }).catch(() => null);
+
+      setStatusMessage({ type: "success", text: "Configurações salvas e sincronizadas na nuvem com sucesso!" });
     } catch (err) {
       setStatusMessage({ type: "error", text: "Erro ao salvar configurações." });
     }
