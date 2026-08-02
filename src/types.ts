@@ -44,6 +44,7 @@ export interface SeriesGroup {
 }
 
 export interface ParsedM3U {
+  updatedAt?: string;
   totalCount: number;
   channelsCount: number;
   moviesCount: number;

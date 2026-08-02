@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { AppConfig, ParsedM3U, PlaylistItem, SeriesGroup } from "./types";
 import { syncClientSources } from "./utils/m3uParser";
+import { generate10SampleMovieLists } from "./utils/sampleMovieLists";
 import {
   fetchCloudConfig,
   fetchCloudParsedContent,
   fetchCloudSources,
+  saveCloudSources,
+  saveCloudParsedContent,
   fetchCloudFavorites,
   saveCloudFavorites,
 } from "./lib/firebase";
@@ -284,6 +287,22 @@ export default function App() {
       }
     } catch (err) {
       console.warn("Error reading local cached content/sources:", err);
+    }
+
+    // 4. Fallback: Initialize with 10 sample movie lists and publish to Cloud Firestore
+    try {
+      const initial10Sources = generate10SampleMovieLists();
+      localStorage.setItem("picapau_sources", JSON.stringify(initial10Sources));
+      saveCloudSources(initial10Sources).catch(() => null);
+
+      const parsed = await syncClientSources(initial10Sources);
+      saveCloudParsedContent(parsed).catch(() => null);
+
+      setContent(parsed);
+      setIsLoading(false);
+      return;
+    } catch (err) {
+      console.warn("Error auto-initializing sample movie lists:", err);
     }
 
     setContent(DEFAULT_FALLBACK_CONTENT);
